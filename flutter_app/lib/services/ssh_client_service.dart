@@ -1,18 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:dartssh2/dartssh2.dart' as ssh;
 
-/// SSH Client Service — koneksi ke VPS via SSH
+/// SSH Client Service — koneksi ke VPS via SSH (dartssh2 v2)
 class SshClientService {
   ssh.SSHClient? _client;
   ssh.SSHShell? _shell;
   StreamSubscription? _outputSub;
+  StreamSubscription? _stderrSub;
   bool _disposed = false;
 
   bool get isConnected => _client != null && _shell != null;
 
-  StreamController<SshClientEvent> _controller = StreamController<SshClientEvent>.broadcast();
+  final StreamController<SshClientEvent> _controller =
+      StreamController<SshClientEvent>.broadcast();
   Stream<SshClientEvent> get events => _controller.stream;
 
   /// Connect ke VPS
@@ -23,26 +25,29 @@ class SshClientService {
     required String password,
   }) async {
     try {
-      _controller.add(SshClientEvent(status: 'connecting', text: 'Connecting to $host:$port...\n'));
+      _controller.add(SshClientEvent(
+          status: 'connecting', text: 'Connecting to $host:$port...\n'));
 
-      final socket = await ssh.SSHClient.connect(
-        host,
-        port: port,
+      // dartssh2 v2: buat TCP socket dulu
+      final socket = await Socket.connect(host, port,
+          timeout: const Duration(seconds: 15));
+
+      _controller.add(SshClientEvent(
+          status: 'authenticating', text: 'Authenticating...\n'));
+
+      // Bungkus socket dengan SSHClient, pakai password auth
+      _client = ssh.SSHClient(
+        socket,
+        username: username,
+        onPasswordRequest: () => password,
       );
 
-      _controller.add(SshClientEvent(status: 'authenticating', text: 'Authenticating...\n'));
+      // Tunggu autentikasi selesai
+      await _client!.authenticated.timeout(const Duration(seconds: 30));
+      _controller.add(SshClientEvent(
+          status: 'starting_shell', text: 'Opening shell...\n'));
 
-      await socket.authenticate(
-        (username) => ssh.SSHKeyboardAuth(
-          username: username,
-          password: password,
-        ),
-      );
-
-      _client = socket;
-
-      _controller.add(SshClientEvent(status: 'starting_shell', text: 'Opening shell...\n'));
-
+      // Buka shell interaktif
       _shell = await _client!.shell(
         terminal: 'xterm-256color',
         terminalWidth: 80,
@@ -76,7 +81,28 @@ class SshClientService {
         },
       );
 
-      _controller.add(SshClientEvent(status: 'connected', text: '✓ Connected to $host\n'));
+      // Juga baca stderr
+      _stderrSub = _shell!.stderr.listen(
+        (data) {
+          if (!_disposed) {
+            _controller.add(SshClientEvent(
+              status: 'data',
+              text: utf8.decode(data, allowMalformed: true),
+            ));
+          }
+        },
+        onError: (err) {
+          if (!_disposed) {
+            _controller.add(SshClientEvent(
+              status: 'error',
+              text: 'SSH stderr: $err\n',
+            ));
+          }
+        },
+      );
+
+      _controller.add(
+          SshClientEvent(status: 'connected', text: '✓ Connected to $host\n'));
       return true;
     } catch (e) {
       _controller.add(SshClientEvent(
@@ -91,7 +117,6 @@ class SshClientService {
   void sendCommand(String cmd) {
     if (_shell != null && !_disposed) {
       _shell!.stdin.add(utf8.encode(cmd));
-      _controller.add(SshClientEvent(status: 'data', text: cmd));
     }
   }
 
@@ -113,15 +138,18 @@ class SshClientService {
   Future<void> disconnect() async {
     _disposed = true;
     await _outputSub?.cancel();
+    await _stderrSub?.cancel();
     await _shell?.close();
     _shell = null;
     _client = null;
-    _controller.add(SshClientEvent(status: 'disconnected', text: 'Disconnected.\n'));
+    _controller
+        .add(SshClientEvent(status: 'disconnected', text: 'Disconnected.\n'));
   }
 
   void dispose() {
     _disposed = true;
     _outputSub?.cancel();
+    _stderrSub?.cancel();
     _shell?.close();
     _client?.close();
     _controller.close();
