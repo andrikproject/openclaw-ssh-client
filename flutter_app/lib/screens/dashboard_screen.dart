@@ -16,6 +16,7 @@ import 'packages_screen.dart';
 import 'providers_screen.dart';
 import 'settings_screen.dart';
 import 'ssh_screen.dart';
+import 'ssh_client_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -150,6 +151,15 @@ class DashboardScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SshScreen()),
+              ),
+            ),
+            StatusCard(
+              title: 'SSH Client',
+              subtitle: 'Connect to VPS from your phone',
+              icon: Icons.computer,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SshClientScreen()),
               ),
             ),
             StatusCard(
