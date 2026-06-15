@@ -30,6 +30,32 @@ class _SshClientScreenState extends State<SshClientScreen> {
   void initState() {
     super.initState();
     _service.events.listen(_onEvent);
+    _focusCmd.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent || event is KeyRepeatEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          setState(() {
+            if (_history.isNotEmpty) {
+              _historyIdx = (_historyIdx + 1).clamp(0, _history.length - 1);
+              _cmdC.text = _history[_historyIdx];
+            }
+          });
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          setState(() {
+            if (_historyIdx > 0) {
+              _historyIdx--;
+              _cmdC.text = _history[_historyIdx];
+            } else {
+              _historyIdx = -1;
+              _cmdC.clear();
+            }
+          });
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
   }
 
   @override
@@ -90,7 +116,7 @@ class _SshClientScreenState extends State<SshClientScreen> {
       host: host,
       port: port,
       username: user,
-      password: password,
+      password: pass,
     );
   }
 
@@ -299,26 +325,6 @@ class _SshClientScreenState extends State<SshClientScreen> {
                   ),
                   autofocus: true,
                   onSubmitted: (_) => _sendCommand(),
-                  onKey: (node, event) {
-                    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                      if (_history.isNotEmpty) {
-                        _historyIdx = (_historyIdx + 1).clamp(0, _history.length - 1);
-                        _cmdC.text = _history[_historyIdx];
-                      }
-                      return KeyEventResult.handled;
-                    }
-                    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                      if (_historyIdx > 0) {
-                        _historyIdx--;
-                        _cmdC.text = _history[_historyIdx];
-                      } else {
-                        _historyIdx = -1;
-                        _cmdC.clear();
-                      }
-                      return KeyEventResult.handled;
-                    }
-                    return KeyEventResult.ignored;
-                  },
                 ),
               ),
               IconButton(
